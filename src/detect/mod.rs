@@ -437,6 +437,44 @@ fn wrapped_agent_name_from_runtime_argv(runtime: &str, argv: Option<&[String]>) 
     }
 }
 
+/// Read the explicit launch profile without inspecting the gateway process.
+pub(crate) fn hermes_process_profile(
+    process: &crate::platform::ForegroundProcess,
+) -> Option<String> {
+    let argv = process.argv.as_deref()?;
+    let (executable, args) = argv.split_first()?;
+    let runtime = normalized_agent_lookup_name(path_basename(executable));
+    let args = if is_python_runtime(&runtime) && hermes_installer_agent_name(argv).is_some() {
+        &argv[4..]
+    } else if identify_agent(&runtime) == Some(Agent::Hermes) {
+        args
+    } else {
+        return None;
+    };
+
+    // Profile selection is a launcher flag. Stop at positional arguments so a
+    // command or prompt passed through to Hermes cannot be treated as a profile.
+    let args = match args {
+        [command, rest @ ..] if command == "chat" => rest,
+        args => args,
+    };
+    let profile = match args {
+        [flag, value, ..] if matches!(flag.as_str(), "-p" | "--profile") => value.as_str(),
+        [flag, ..] => flag.strip_prefix("--profile=")?,
+        [] => return None,
+    };
+    let profile = profile.trim();
+    let mut chars = profile.bytes();
+    if profile.len() > 64
+        || !chars.next().is_some_and(|ch| ch.is_ascii_alphanumeric())
+        || !chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, b'-' | b'_'))
+        || profile.eq_ignore_ascii_case("default")
+    {
+        return None;
+    }
+    Some(profile.to_ascii_lowercase())
+}
+
 fn hermes_installer_agent_name(argv: &[String]) -> Option<String> {
     let [_, isolation, command, code, args @ ..] = argv else {
         return None;
@@ -1472,6 +1510,37 @@ mod tests {
                     cmdline: Some(process["cmdline"].as_str().unwrap().to_string()),
                 })
                 .collect(),
+        }
+    }
+
+    #[test]
+    fn hermes_profile_comes_from_the_installer_launch_arguments() {
+        let mut job = hermes_installer_capture();
+        let process = job
+            .processes
+            .iter_mut()
+            .find(|process| process.pid == job.process_group_id)
+            .unwrap();
+        let launcher = process.argv.as_ref().unwrap()[..4].to_vec();
+        for (args, expected) in [
+            (vec!["-p", "hrm"], Some("hrm")),
+            (vec!["--profile", "Work-2"], Some("work-2")),
+            (vec!["chat", "--profile=hrm"], Some("hrm")),
+            (vec!["-p", "default"], None),
+            (vec!["-p", "../hrm"], None),
+            (vec!["-p"], None),
+            (vec!["--", "-p", "hrm"], None),
+            (vec!["-q", "-p", "hrm"], None),
+            (vec![], None),
+        ] {
+            process.argv = Some(
+                launcher
+                    .iter()
+                    .cloned()
+                    .chain(args.into_iter().map(str::to_owned))
+                    .collect(),
+            );
+            assert_eq!(hermes_process_profile(process).as_deref(), expected);
         }
     }
 

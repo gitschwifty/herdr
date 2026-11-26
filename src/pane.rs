@@ -290,6 +290,7 @@ async fn publish_agent_process_detected_event(
     state_events: mpsc::Sender<AppEvent>,
     pane_id: PaneId,
     agent: Agent,
+    profile: Option<String>,
     observed_at: std::time::Instant,
 ) {
     if let Err(e) = state_events
@@ -305,6 +306,29 @@ async fn publish_agent_process_detected_event(
             err = %e,
             "failed to deliver AgentProcessDetected event"
         );
+        return;
+    }
+    if agent == Agent::Hermes {
+        let clear_display_agent = profile.is_none();
+        if let Err(err) = state_events
+            .send(AppEvent::HookMetadataReported {
+                pane_id,
+                source: "herdr:hermes-launch-profile".into(),
+                agent_label: Some("hermes".into()),
+                applies_to_source: None,
+                title: None,
+                display_agent: profile,
+                state_labels: Default::default(),
+                clear_title: false,
+                clear_display_agent,
+                clear_state_labels: false,
+                seq: None,
+                ttl: None,
+            })
+            .await
+        {
+            warn!(pane = pane_id.raw(), %err, "failed to report Hermes launch profile");
+        }
     }
 }
 
@@ -800,6 +824,7 @@ struct ProcessProbeResult {
     /// The process that identified as `agent`, which need not lead its job.
     agent_pid: Option<u32>,
     process_name: Option<String>,
+    profile: Option<String>,
 }
 
 fn agent_hint_for_foreground_job_members(
@@ -846,6 +871,14 @@ fn process_probe_result(
         agent: Some(agent),
         agent_pid: Some(agent_pid),
         process_name: Some(process_name),
+        profile: (agent == Agent::Hermes)
+            .then(|| {
+                job.processes
+                    .iter()
+                    .find(|process| process.pid == agent_pid)
+            })
+            .flatten()
+            .and_then(crate::detect::hermes_process_profile),
     }
 }
 
@@ -901,6 +934,7 @@ fn probe_foreground_process_from_jobs(
             agent: None,
             agent_pid: None,
             process_name: None,
+            profile: None,
         };
     }
 
@@ -910,6 +944,7 @@ fn probe_foreground_process_from_jobs(
         agent: None,
         agent_pid: None,
         process_name: None,
+        profile: None,
     }
 }
 
@@ -1117,6 +1152,7 @@ fn spawn_basic_detection_task(
                                 state_events.clone(),
                                 pane_id,
                                 agent,
+                                probe.profile,
                                 now,
                             )
                             .await;
@@ -3094,6 +3130,7 @@ impl PaneRuntime {
                                             state_events.clone(),
                                             pane_id,
                                             agent,
+                                            probe.profile,
                                             now,
                                         )
                                         .await;
