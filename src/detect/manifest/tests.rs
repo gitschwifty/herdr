@@ -157,6 +157,32 @@ line_regex = ["^exact line$"]
     });
 }
 
+#[test]
+fn bottom_footer_regex_matches_localized_text_and_ignores_historical_footer() {
+    with_manifest_dirs("localized-footer", || {
+        write_local_codex(&rules_manifest(
+            r#"
+[[rules]]
+id = "live_footer"
+state = "working"
+region = "bottom_non_empty_lines(3)"
+regex = ['(?:^|\n)={4,}\nSTATUS[^\n]* · ▶[ \t]+\p{Nd}[^\n]*(?:\n[ \t]*)*\z']
+"#,
+        ));
+        for duration in ["12 seconds", "12 秒", "１２秒"] {
+            let footer = format!("output\n========\nSTATUS · ▶ {duration}\n");
+            let result = explain(Agent::Codex, &footer);
+            assert_eq!(result.state, AgentState::Working);
+            assert_eq!(
+                result.matched_rule.as_ref().map(|rule| rule.id.as_str()),
+                Some("live_footer")
+            );
+            let historical = format!("{footer}new prompt\n");
+            assert_eq!(explain(Agent::Codex, &historical).state, AgentState::Idle);
+        }
+    });
+}
+
 // A synthetic terminal protocol: live controls may precede a named divider
 // and an optional panel, but a newer prompt/output makes them historical.
 #[test]

@@ -1,7 +1,7 @@
 id = "hermes"
-version = "2026.07.24.1"
+version = "2026.11.24.2"
 min_engine_version = 2
-updated_at = "2026-07-24T19:12:54Z"
+updated_at = "2026-11-24T22:40:00Z"
 aliases = ["hermes-agent"]
 
 [[rules]]
@@ -100,3 +100,35 @@ priority = 100
 region = "osc_title"
 visible_idle = true
 regex = ['^✓[\u{fe0e}\u{fe0f}]?(?:\s|$)']
+
+[[rules]]
+id = "classic_confirmation_prompt"
+state = "blocked"
+priority = 1000
+region = "bottom_non_empty_lines(4)"
+visible_blocker = true
+regex = ['(?:^|\n)[ \t]*─{4,}[^\n]*\n[ \t]*⚠[\u{fe0e}\u{fe0f}]?[ \t]+[❯>›»→#$][^\n]*\n[ \t]*─{4,}[ \t]*\n[ \t]*☤[^\n]*(?:\n[ \t]*)*\z']
+
+[[rules]]
+id = "classic_busy_prompt"
+state = "working"
+priority = 875
+region = "bottom_non_empty_lines(3)"
+visible_working = true
+regex = ['(?:^|\n)[ \t]*☤[ \t]+[❯>›»→#$][^\n]*\n[ \t]*─{4,}[ \t]*\n[ \t]*☤[^\n]*(?:\n[ \t]*)*\z']
+
+[[rules]]
+id = "classic_live_timer"
+state = "working"
+priority = 850
+region = "bottom_non_empty_lines(3)"
+visible_working = true
+regex = ['(?:^|\n)[ \t]*─{4,}[ \t]*\n[ \t]*☤[^\n]* · ⏱[ \t]+\p{Nd}[^\n]*(?:\n[ \t]*)*\z']
+
+[[rules]]
+id = "classic_stopped_timer"
+state = "idle"
+priority = 600
+region = "bottom_non_empty_lines(3)"
+visible_idle = true
+regex = ['(?:^|\n)[ \t]*─{4,}[ \t]*\n[ \t]*☤[^\n]* · ⏲[ \t]+\p{Nd}[^\n]*(?:\n[ \t]*)*\z']

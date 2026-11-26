@@ -49,6 +49,18 @@ class HermesIntegrationAssetTests(unittest.TestCase):
 
         self.assertEqual(calls, [("root-1", "startup"), ("root-2", "new")])
 
+    def test_one_shot_does_not_report_session_identity(self):
+        module = load_asset()
+        context = FakeContext()
+        module.register(context)
+
+        with mock.patch.dict(module.os.environ, {"HERMES_SINGLE_QUERY_SESSION": "1"}):
+            with mock.patch.object(module, "_send_session") as send:
+                for callback in context.hooks.values():
+                    callback(session_id="one-shot", platform="cli")
+
+        send.assert_not_called()
+
     def test_send_session_uses_cli_with_the_active_pane(self):
         module = load_asset()
         environment = {
