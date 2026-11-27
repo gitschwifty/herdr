@@ -1,4 +1,6 @@
 import importlib.util
+import sys
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -48,6 +50,42 @@ class HermesIntegrationAssetTests(unittest.TestCase):
         )
 
         self.assertEqual(calls, [("root-1", "startup"), ("root-2", "new")])
+
+    def test_one_shot_does_not_report_session_identity(self):
+        module = load_asset()
+        context = FakeContext()
+        module.register(context)
+
+        with mock.patch.dict(module.os.environ, {"HERMES_SINGLE_QUERY_SESSION": "1"}):
+            with mock.patch.object(module, "_send_session") as send:
+                for callback in context.hooks.values():
+                    callback(session_id="one-shot", platform="cli")
+
+        send.assert_not_called()
+
+    def test_reports_named_interactive_profile_as_display_metadata(self):
+        module = load_asset()
+        profiles = types.ModuleType("hermes_cli.profiles")
+        profiles.get_active_profile_name = mock.Mock(return_value="hrm")
+        environment = {"HERDR_ENV": "1", "HERDR_PANE_ID": "w1:p2"}
+        with mock.patch.dict(sys.modules, {"hermes_cli.profiles": profiles}):
+            with mock.patch.dict(module.os.environ, environment, clear=True):
+                with mock.patch.object(module.subprocess, "run") as run:
+                    module._report_profile(platform="cli")
+                    self.assertEqual(
+                        run.call_args.args[0],
+                        ["herdr", "pane", "report-metadata", "w1:p2", "--source",
+                         "herdr:hermes-profile", "--agent", "hermes", "--display-agent", "hrm"],
+                    )
+                    run.reset_mock()
+                    for name in ("default", "custom"):
+                        profiles.get_active_profile_name.return_value = name
+                        module._report_profile(platform="cli")
+                    profiles.get_active_profile_name.return_value = "hrm"
+                    module._report_profile(platform="gateway")
+                    module.os.environ["HERMES_SINGLE_QUERY_SESSION"] = "1"
+                    module._report_profile(platform="cli")
+                    run.assert_not_called()
 
     def test_send_session_uses_cli_with_the_active_pane(self):
         module = load_asset()
